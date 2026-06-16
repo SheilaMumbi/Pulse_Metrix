@@ -111,3 +111,22 @@ When a user triggers the diagnostics, data moves through a strict 4-stage pipeli
 [4. Model Sigmoid Array Mapping via cardio_guard_model.pkl]
     • Computes probability P(CHD)
     • If P(CHD) >= 0.30 ──> Trigger Conversational High-Risk Alert
+```
+
+## Project Structure
+```text
+├── assets/                     # App screenshots linked inside this README
+│   ├── app_overview.png
+│   ├── tab1_risk_assessment.png
+│   ├── tab2_health_metrics.png
+│   └── tab3_recommendations.png
+├── models/
+│   ├── cardio_guard_model.pkl  # Wrapped dict containing model, features & threshold
+│   ├── scaler.pkl              # Fitted StandardScaler instance
+│   ├── training_report.txt     # Complete classification reports
+│   ├── roc_curve.png           # Visual performance curve
+│   └── feature_importance.png  # Absolute coefficients plot
+├── app.py                      # Clean Streamlit user interface (3-tab deployment)
+├── train_model.py              # Training pipeline with SMOTE & Hyperparameter tuning
+├── framingham.csv              # Source dataset (3,751 rows post-cleaning)
+└── README.md                   # Project documentation
