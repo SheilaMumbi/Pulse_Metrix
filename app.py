@@ -1,8 +1,8 @@
 """
-Cardio Guard - Advanced CHD Risk Prediction App
-================================================
+PulseMetrix - Advanced CHD Risk Prediction Dashboard
+===================================================
 A production-grade Streamlit app for 10-year Coronary Heart Disease risk prediction.
-Built on the Framingham Heart Study dataset with an ensemble model pipeline.
+Built on the Framingham Heart Study dataset with an optimized pipeline architecture.
 """
 
 import streamlit as st
@@ -10,102 +10,76 @@ import joblib
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 from pathlib import Path
-import os
 
 # ── Page config (must be first Streamlit call) ──────────────────────────────
 st.set_page_config(
-    page_title="Cardio Guard",
+    page_title="PulseMetrix",
     page_icon="🫀",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# ── Constants & File Paths ──────────────────────────────────────────────────
 MODEL_PATH  = Path(__file__).parent / "models" / "cardio_guard_model.pkl"
 SCALER_PATH = Path(__file__).parent / "models" / "scaler.pkl"
 
-# The 7 raw entry fields matching user sidebar selections
-FEATURE_COLS = ["age", "cigsPerDay", "totChol", "sysBP", "glucose", "diaBP", "heartRate"]
-
-NORMAL_RANGES = {
-    "totChol":   (0,   200,  "< 200 mg/dL is desirable"),
-    "sysBP":     (90,  120,  "90–120 mmHg is normal"),
-    "diaBP":     (60,  80,   "60–80 mmHg is normal"),
-    "glucose":   (70,  100,  "70–100 mg/dL (fasting) is normal"),
-    "heartRate": (60,  100,  "60–100 bpm is normal"),
-}
-
 RISK_FACTORS_INFO = {
-    "age":        "Risk increases significantly after age 45 (men) and 55 (women).",
-    "cigsPerDay": "Smoking doubles the risk of heart disease.",
-    "totChol":    "High cholesterol leads to plaque buildup in arteries.",
-    "sysBP":      "Hypertension strains the heart and damages blood vessels.",
-    "diaBP":      "Elevated diastolic pressure increases cardiac workload.",
-    "glucose":    "Diabetes is a major independent risk factor for CHD.",
-    "heartRate":  "Resting heart rate > 100 bpm is associated with higher risk.",
-    "BMI":        "Obesity raises blood pressure, cholesterol, and diabetes risk.",
+    "Age":           "Risk increases significantly after age 45 (men) and 55 (women).",
+    "Smoking":       "Smoking doubles the risk of heart disease by introducing chronic vascular oxidative stress.",
+    "Cholesterol":   "High cholesterol leads to plaque buildup in major arterial channels.",
+    "Systolic BP":   "Hypertension strains the heart muscle and actively damages fine blood vessels.",
+    "Diastolic BP":  "Elevated diastolic pressure increases long-term resting cardiac workload.",
+    "Glucose":       "Diabetes serves as a major, highly aggressive independent risk factor for CHD.",
+    "Heart Rate":    "Resting heart rates consistently over 100 bpm are associated with heightened risk profiles.",
+    "BMI":           "Obesity shifts blood pressure bounds, cholesterol configurations, and insulin affinity.",
 }
 
-# ── Custom CSS ───────────────────────────────────────────────────────────────
+# ── Custom Unified CSS Styling ──────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Main header */
+    /* Main header banner */
     .main-header {
-        background: linear-gradient(135deg, #c0392b 0%, #8e44ad 100%);
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
         padding: 2rem;
         border-radius: 12px;
         color: white;
         text-align: center;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
     }
-    .main-header h1 { font-size: 2.8rem; margin: 0; }
-    .main-header p  { font-size: 1.1rem; opacity: 0.9; margin: 0.5rem 0 0; }
+    .main-header h1 { font-size: 2.6rem; margin: 0; font-weight: 700; color: #f8fafc; }
+    .main-header p  { font-size: 1.1rem; opacity: 0.9; margin: 0.5rem 0 0; color: #cbd5e1; }
 
-    /* Risk result cards */
+    /* Risk result state cards */
     .risk-high {
         background: linear-gradient(135deg, #ff4757, #ff6b81);
         padding: 1.5rem; border-radius: 12px; color: white; text-align: center;
         font-size: 1.4rem; font-weight: bold; margin: 1rem 0;
-        box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+        box-shadow: 0 4px 15px rgba(255, 71, 87, 0.3);
     }
     .risk-moderate {
         background: linear-gradient(135deg, #ffa502, #ff6348);
         padding: 1.5rem; border-radius: 12px; color: white; text-align: center;
         font-size: 1.4rem; font-weight: bold; margin: 1rem 0;
-        box-shadow: 0 4px 15px rgba(255, 165, 2, 0.4);
+        box-shadow: 0 4px 15px rgba(255, 165, 2, 0.3);
     }
     .risk-low {
         background: linear-gradient(135deg, #2ed573, #1e90ff);
         padding: 1.5rem; border-radius: 12px; color: white; text-align: center;
         font-size: 1.4rem; font-weight: bold; margin: 1rem 0;
-        box-shadow: 0 4px 15px rgba(46, 213, 115, 0.4);
+        box-shadow: 0 4px 15px rgba(46, 213, 115, 0.3);
     }
 
-    /* Info cards */
+    /* Recommendation Info elements */
     .info-card {
-        background: #fff3cd;
-        color: #856404;
-        border-left: 4px solid #c0392b;
+        background: #f8fafc;
+        color: #1e293b;
+        border-left: 4px solid #3b82f6;
         padding: 1rem 1.2rem;
         border-radius: 0 8px 8px 0;
-        margin: 0.5rem 0;
+        margin: 0.6rem 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-
-    /* Metric card */
-    .metric-card {
-        background: white;
-        border: 1px solid #e0e0e0;
-        border-radius: 10px;
-        padding: 1rem;
-        text-align: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-
-    /* Sidebar styling */
-    section[data-testid="stSidebar"] { background-color: #1a1a2e; }
-    section[data-testid="stSidebar"] * { color: #eee !important; }
 
     .disclaimer-box {
         background: #fff3cd;
@@ -115,9 +89,6 @@ st.markdown("""
         padding: 1rem 1.2rem;
         margin-top: 2rem;
     }
-    
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { border-radius: 8px 8px 0 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -125,26 +96,32 @@ st.markdown("""
 # ── Helper: load model ────────────────────────────────────────────────────────
 @st.cache_resource
 def load_model_and_scaler():
-    """Load the trained pipeline from disk. Returns (model, scaler) or (None, None)."""
+    """Load the trained pipeline artifacts safely from disk."""
     if MODEL_PATH.exists() and SCALER_PATH.exists():
         artefact = joblib.load(MODEL_PATH)
         scaler = joblib.load(SCALER_PATH)
         
         if isinstance(artefact, dict) and "model" in artefact:
             model = artefact["model"]
+            threshold = artefact.get("threshold", 0.30)
+            features = artefact.get("features", None)
         else:
             model = artefact
+            threshold = 0.30
+            features = None
             
-        return model, scaler
-    return None, None
+        return model, scaler, threshold, features
+    return None, None, 0.30, None
 
 
 # ── Helper: gauge chart ───────────────────────────────────────────────────────
-def make_gauge(probability: float) -> go.Figure:
+def make_gauge(probability: float, threshold: float) -> go.Figure:
     pct = probability * 100
-    if pct < 20:
+    thresh_pct = threshold * 100
+    
+    if pct < 15:
         color = "#2ed573"
-    elif pct < 40:
+    elif pct < thresh_pct:
         color = "#ffa502"
     else:
         color = "#ff4757"
@@ -157,14 +134,14 @@ def make_gauge(probability: float) -> go.Figure:
             "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "darkgray"},
             "bar":  {"color": color},
             "steps": [
-                {"range": [0,  20], "color": "#d4efdf"},
-                {"range": [20, 40], "color": "#fdebd0"},
-                {"range": [40, 100], "color": "#fadbd8"},
+                {"range": [0, 15], "color": "#e2e8f0"},
+                {"range": [15, thresh_pct], "color": "#fef3c7"},
+                {"range": [thresh_pct, 100], "color": "#fee2e2"},
             ],
             "threshold": {
-                "line": {"color": "red", "width": 4},
+                "line": {"color": "black", "width": 3},
                 "thickness": 0.75,
-                "value": 30,
+                "value": thresh_pct,
             },
         },
         title={"text": "10-Year CHD Risk Probability", "font": {"size": 16}},
@@ -175,7 +152,7 @@ def make_gauge(probability: float) -> go.Figure:
 
 # ── Helper: feature importance radar ─────────────────────────────────────────
 def make_radar(user_vals: dict) -> go.Figure:
-    """Normalised radar chart showing where the user sits vs healthy ranges."""
+    """Normalised radar chart mapping user configuration entries to boundaries."""
     labels, user_norm, healthy_norm = [], [], []
 
     benchmarks = {
@@ -197,88 +174,112 @@ def make_radar(user_vals: dict) -> go.Figure:
     fig.add_trace(go.Scatterpolar(
         r=healthy_norm + [healthy_norm[0]],
         theta=labels + [labels[0]],
-        fill="toself", name="Healthy Benchmark",
-        line_color="#2ed573", fillcolor="rgba(46,213,115,0.15)"
+        fill="toself", name="Optimal Bound Baseline",
+        line_color="#2ed573", fillcolor="rgba(46,213,115,0.12)"
     ))
     fig.add_trace(go.Scatterpolar(
         r=user_norm + [user_norm[0]],
         theta=labels + [labels[0]],
-        fill="toself", name="Your Values",
-        line_color="#ff4757", fillcolor="rgba(255,71,87,0.2)"
+        fill="toself", name="Subject Vector",
+        line_color="#ff4757", fillcolor="rgba(255,71,87,0.18)"
     ))
     fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+        polar=dict(radialaxis=dict(visible=False, range=[0, 1])),
         showlegend=True, height=350,
-        margin=dict(t=30, b=30)
+        margin=dict(t=30, b=30),
+        legend=dict(orientation="h", y=-0.1)
     )
     return fig
 
 
 # ── Helper: recommendation engine ────────────────────────────────────────────
-def generate_recommendations(inputs: dict, prob: float) -> list[str]:
+def generate_recommendations(inputs: dict, prob: float, threshold: float) -> list[str]:
     recs = []
     if inputs["cigsPerDay"] > 0:
-        recs.append("🚭 Quit smoking – even cutting down significantly reduces CHD risk within months.")
+        recs.append("🚭 Smoking Cessation Protocol: Complete elimination of daily inhaled nicotine structures to eliminate chronic vascular stress.")
     if inputs["totChol"] > 200:
-        recs.append("🥗 Lower cholesterol – adopt a diet low in saturated fats and speak to your doctor about statins.")
-    if inputs["sysBP"] > 130:
-        recs.append("💊 Manage blood pressure – aim for < 120/80 mmHg through diet, exercise, and if needed, medication.")
+        recs.append("🥗 Lipid Management Optimization: Pivot macronutrient targets toward high viscous fibers and restrict saturated lipid structures.")
+    if inputs["sysBP"] > 130 or inputs["diaBP"] > 80:
+        recs.append("💊 Hypertension Mitigation Plan: Restrict trace sodium inputs beneath 1,500mg daily to stabilize plasma volume constraints.")
     if inputs["glucose"] > 100:
-        recs.append("🍬 Monitor blood sugar – pre-diabetic and diabetic levels significantly raise CHD risk.")
+        recs.append("🍬 Glycemic Equilibrium Monitoring: Eliminate refined carbohydrate sequences and schedule fasting HbA1c screening.")
     if inputs["BMI"] > 25:
-        recs.append("⚖️ Achieve a healthy weight – losing 5–10% of body weight can lower blood pressure and cholesterol.")
+        recs.append("⚖️ Metabolic Weight Alignment: Aim for a target reduction of 5–10% of total body mass index to reduce overall cardiac load.")
     if inputs["heartRate"] > 100:
-        recs.append("🏃 Increase aerobic exercise – aim for 150 min/week of moderate exercise to lower resting heart rate.")
-    if prob > 0.3:
-        recs.append("🩺 Consult a cardiologist – your risk level warrants a professional cardiovascular assessment.")
+        recs.append("🏃 Aerobic Conditioning Integration: Implement 150 minutes of weekly moderate aerobic activities to improve resting stroke volume.")
+    if prob >= threshold:
+        recs.append("🩺 Cardiology Specialist Referral: The computed profile suggests scheduling advanced diagnostic reviews (such as exercise stress tracking).")
     if not recs:
-        recs.append("✅ Maintain your healthy lifestyle – keep up with regular exercise, balanced diet, and routine check-ups.")
+        recs.append("✅ Stable Configuration Maintained: Continue maintaining current lifestyle baselines, dietary tracking, and scheduled routine evaluations.")
     return recs
 
 
-# ── Main App ──────────────────────────────────────────────────────────────────
+# ── Main App Execution ────────────────────────────────────────────────────────
 def main():
-    # Header
     st.markdown("""
     <div class="main-header">
-        <h1>🫀 Cardio Guard</h1>
-        <p>10-Year Coronary Heart Disease Risk Assessment · Framingham Heart Study Dataset</p>
+        <h1>🫀 PulseMetrix Diagnostic Panel</h1>
+        <p>Production-Grade 10-Year Coronary Heart Disease Machine Learning Prediction Engine</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Sidebar – patient profile
-    with st.sidebar:
-        st.markdown("## 📋 Patient Profile")
+    # Load machine learning binaries
+    model, scaler, clinical_threshold, model_features = load_model_and_scaler()
+
+    if model is None or scaler is None:
+        st.error("🚨 Critical Execution Error: Core diagnostic binaries not found in `models/`. Run **`train_model.py`** prior to launching the dashboard server.")
+        st.stop()
+
+    # ── NEW MAIN DASHBOARD PATIENT ENTRY CONTROL MATRIX (NO SIDEBAR) ─────────
+    with st.container(border=True):
+        st.markdown("### 📋 Patient Structural Profile Matrix")
+        
+        col_demo, col_life, col_vitals = st.columns(3)
+
+        with col_demo:
+            st.markdown("**👤 Core Demographics**")
+            age = st.slider("Age (Years)", min_value=18, max_value=90, value=45, step=1)
+            sex_label = st.selectbox("Biological Sex at Birth", options=["Female", "Male"], index=0)
+            sex_male = 1 if sex_label == "Male" else 0
+
+        with col_life:
+            st.markdown("**🚬 Behavioral Indicators**")
+            current_smoker = st.toggle("Current Active Smoker", value=False)
+            
+            if current_smoker:
+                cigs_per_day = st.slider("Cigarettes per Day", min_value=1, max_value=60, value=15)
+            else:
+                st.caption("🔒 Cigarette slider locked to 0 (Subject declared non-smoker)")
+                cigs_per_day = 0
+
+            # Structural secondary background inputs
+            st.markdown("**📋 Clinical Background Context**")
+            sub_c1, sub_c2 = st.columns(2)
+            with sub_c1:
+                bp_meds = st.checkbox("On BP Meds")
+                prevalent_stroke = st.checkbox("History of Stroke")
+            with sub_c2:
+                prevalent_hyp = st.checkbox("Hypertension Diagnosed")
+                diabetes = st.checkbox("Diabetes Diagnosed")
+
+        with col_vitals:
+            st.markdown("**🧪 Lab Quantified Vitals & Assays**")
+            v_sub1, v_sub2 = st.columns(2)
+            with v_sub1:
+                tot_chol = st.number_input("Total Cholesterol (mg/dL)", 100, 400, 200, step=5)
+                sys_bp   = st.number_input("Systolic BP (mmHg)",        80, 250, 120, step=1)
+                dia_bp   = st.number_input("Diastolic BP (mmHg)",       40, 150, 80,  step=1)
+            with v_sub2:
+                bmi        = st.number_input("Body Mass Index (BMI)", 10.0, 60.0, 25.0, step=0.1, format="%.1f")
+                heart_rate = st.number_input("Heart Rate (bpm)",       40, 150, 75,  step=1)
+                glucose    = st.number_input("Fasting Glucose (mg/dL)", 50, 400, 85,  step=1)
+
         st.markdown("---")
+        btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 2])
+        with btn_col2:
+            predict_btn = st.button("📊 Run Predictive Diagnostics", use_container_width=True, type="primary")
 
-        age         = st.slider("Age (years)",            18, 90, 45)
-        sex_label   = st.radio("Biological Sex",          ["Female", "Male"])
-        sex_male    = 1 if sex_label == "Male" else 0
-
-        st.markdown("### 🚬 Lifestyle")
-        current_smoker = st.checkbox("Current Smoker", value=False)
-        cigs_per_day   = st.slider("Cigarettes per Day", 0, 60, 0,
-                                   disabled=not current_smoker)
-        if not current_smoker:
-            cigs_per_day = 0
-
-        st.markdown("### 💊 Medical History")
-        bp_meds         = st.checkbox("On Blood Pressure Medication")
-        prevalent_stroke = st.checkbox("History of Stroke")
-        prevalent_hyp    = st.checkbox("Hypertension Diagnosis")
-        diabetes         = st.checkbox("Diabetes Diagnosis")
-
-        st.markdown("### 🩺 Vitals & Labs")
-        tot_chol   = st.number_input("Total Cholesterol (mg/dL)", 100, 400, 200, step=5)
-        sys_bp     = st.number_input("Systolic BP (mmHg)",        80,  250, 120, step=1)
-        dia_bp     = st.number_input("Diastolic BP (mmHg)",       40,  150, 80,  step=1)
-        bmi        = st.number_input("BMI",                       10.0, 60.0, 25.0, step=0.1, format="%.1f")
-        heart_rate = st.number_input("Heart Rate (bpm)",          40,  150, 75,  step=1)
-        glucose    = st.number_input("Fasting Glucose (mg/dL)",   50,  400, 85,  step=1)
-
-        predict_btn = st.button("🔮 Predict CHD Risk", use_container_width=True, type="primary")
-
-    # Collect inputs
+    # Mapping vector properties
     user_inputs = {
         "age": age, "sex_male": sex_male,
         "currentSmoker": int(current_smoker), "cigsPerDay": cigs_per_day,
@@ -288,112 +289,106 @@ def main():
         "BMI": bmi, "heartRate": heart_rate, "glucose": glucose,
     }
 
-    # Re-engineer all 4 features inside the prediction logic to perfectly total 11 features
+    # ── REAL-TIME FEATURE ENGINEERING TRANSFORMATIONS ───────────────────────
     pulse_pressure = sys_bp - dia_bp
     mean_arterial_pressure = dia_bp + (pulse_pressure / 3)
     chol_glucose_ratio = tot_chol / (glucose + 1)
     age_x_cigs = age * cigs_per_day
 
-    feature_array = np.array([[
-        age, cigs_per_day, tot_chol, sys_bp, glucose, dia_bp, heart_rate,
-        pulse_pressure, mean_arterial_pressure, chol_glucose_ratio, age_x_cigs
-    ]])
+    # Dictionary containing all possible engineered dimensions
+    full_feature_map = {
+        "male": sex_male, "age": age, "currentSmoker": int(current_smoker), "cigsPerDay": cigs_per_day,
+        "totChol": tot_chol, "sysBP": sys_bp, "diaBP": dia_bp, "BMI": bmi, "heartRate": heart_rate, "glucose": glucose,
+        "pulse_pressure": pulse_pressure, "MAP": mean_arterial_pressure, 
+        "chol_glucose_ratio": chol_glucose_ratio, "age_x_cigs": age_x_cigs
+    }
 
-    # Load model
-    model, scaler = load_model_and_scaler()
+    # If the wrapped model package didn't specify features, default back to historical index orders
+    if model_features is None:
+        feature_array = np.array([[
+            age, cigs_per_day, tot_chol, sys_bp, glucose, dia_bp, heart_rate,
+            pulse_pressure, mean_arterial_pressure, chol_glucose_ratio, age_x_cigs
+        ]])
+    else:
+        # Dynamically filter and index map input matching your exact training schema
+        feature_array = np.array([[full_feature_map[f] for f in model_features]])
 
-    # ── Tabs ───────────────────────────────
-    tab1, tab2, tab3 = st.tabs(
-        ["📊 Risk Assessment", "📈 Health Metrics", "💡 Recommendations"]
-    )
+    # ── OUTPUT TABS GENERATION LAYER ─────────────────────────────────────────
+    st.markdown("### 🧬 Analysis Matrix Results")
+    tab1, tab2, tab3 = st.tabs(["📊 Risk Assessment", "📈 Health Metrics", "💡 Recommendations"])
 
-    # Default probability placeholder
     probability = 0.0
 
-    # ── TAB 1: Risk Assessment ────────────────────────────────────────────────
+    # TAB 1: Risk Assessment Evaluation Panel
     with tab1:
-        if model is None:
-            st.warning(
-                "⚠️ Trained model not found at `models/cardio_guard_model.pkl`. "
-                "Run **`train_model.py`** first to generate the model, then restart the app."
-            )
-            st.info("👉 While the model loads, explore the other health metrics tabs.")
-        else:
-            if predict_btn or "last_prob" in st.session_state:
-                if predict_btn:
-                    scaled = scaler.transform(feature_array)
-                    probability = float(model.predict_proba(scaled)[0][1])
-                    st.session_state["last_prob"] = probability
-                    st.session_state["last_inputs"] = user_inputs
-                else:
-                    probability = st.session_state["last_prob"]
-                    user_inputs = st.session_state["last_inputs"]
-
-                pct = probability * 100
-
-                col_gauge, col_result = st.columns([1, 1])
-                with col_gauge:
-                    st.plotly_chart(make_gauge(probability), use_container_width=True)
-
-                with col_result:
-                    if pct < 20:
-                        st.markdown(f'<div class="risk-low">✅ Low Risk &nbsp;·&nbsp; {pct:.1f}%</div>', unsafe_allow_html=True)
-                        st.success("Your 10-year CHD risk is **low**. Maintain your healthy habits!")
-                    elif pct < 40:
-                        st.markdown(f'<div class="risk-moderate">⚠️ Moderate Risk &nbsp;·&nbsp; {pct:.1f}%</div>', unsafe_allow_html=True)
-                        st.warning("You have a **moderate** risk. Consider lifestyle changes and speak to your GP.")
-                    else:
-                        st.markdown(f'<div class="risk-high">🚨 High Risk &nbsp;·&nbsp; {pct:.1f}%</div>', unsafe_allow_html=True)
-                        st.error("Your risk is **elevated**. Please consult a cardiologist promptly.")
-
-                    # Key risk flags
-                    st.markdown("**Key flags in your profile:**")
-                    flags = []
-                    if sys_bp > 130: flags.append("🔴 Elevated systolic BP")
-                    if tot_chol > 200: flags.append("🔴 High cholesterol")
-                    if glucose > 100: flags.append("🔴 Elevated glucose")
-                    if cigs_per_day > 0: flags.append("🔴 Active smoker")
-                    if bmi > 30: flags.append("🟡 Obese BMI")
-                    elif bmi > 25: flags.append("🟡 Overweight BMI")
-                    if heart_rate > 100: flags.append("🟡 Elevated heart rate")
-                    if not flags:
-                        flags = ["🟢 No major risk flags detected"]
-                    for f in flags:
-                        st.markdown(f"- {f}")
-
-                # Summary table
-                st.markdown("---")
-                st.markdown("### 📄 Input Summary")
-                summary = pd.DataFrame({
-                    "Parameter": ["Age", "Sex", "Smoker", "Cigs/Day", "Cholesterol",
-                                  "Systolic BP", "Diastolic BP", "BMI", "Heart Rate", "Glucose"],
-                    "Your Value": [age, sex_label, "Yes" if current_smoker else "No",
-                                   cigs_per_day, f"{tot_chol} mg/dL", f"{sys_bp} mmHg",
-                                   f"{dia_bp} mmHg", f"{bmi:.1f}", f"{heart_rate} bpm",
-                                   f"{glucose} mg/dL"],
-                })
-                st.dataframe(summary, use_container_width=True, hide_index=True)
+        if predict_btn or "last_prob" in st.session_state:
+            if predict_btn:
+                scaled = scaler.transform(feature_array)
+                probability = float(model.predict_proba(scaled)[0][1])
+                st.session_state["last_prob"] = probability
+                st.session_state["last_inputs"] = user_inputs
             else:
-                st.info("👈 Fill in your health details in the sidebar and click **Predict CHD Risk**.")
-                st.markdown("""
-                ### About This Tool
-                Cardio Guard uses a **logistic regression model** trained on the Framingham Heart Study 
-                dataset (3,751 patients) to estimate your 10-year risk of developing Coronary Heart Disease.
+                probability = st.session_state["last_prob"]
+                user_inputs = st.session_state["last_inputs"]
 
-                **Features used:**
-                - Age, sex, smoking habits
-                - Blood pressure (systolic & diastolic)
-                - Total cholesterol, glucose, heart rate, BMI
-                """)
+            pct = probability * 100
+            col_gauge, col_result = st.columns([1, 1])
+            
+            with col_gauge:
+                st.plotly_chart(make_gauge(probability, clinical_threshold), use_container_width=True)
 
-    # ── TAB 2: Health Metrics ─────────────────────────────────────────────────
+            with col_result:
+                if pct < 15:
+                    st.markdown(f'<div class="risk-low">✅ All Good! &nbsp;·&nbsp; {pct:.1f}%</div>', unsafe_allow_html=True)
+                    st.success("**Wonderful news!** Your heart score is looking great and healthy. Keep playing, walking, eating your greens, and enjoying your daily routines to keep your heart smiling!")
+                elif pct < (clinical_threshold * 100):
+                    st.markdown(f'<div class="risk-moderate">⚠️ Gentle Warning &nbsp;·&nbsp; {pct:.1f}%</div>', unsafe_allow_html=True)
+                    st.warning("**Let\'s be a bit careful:** Your score is in the middle. There is no need to worry, but it is a good reminder to eat a bit healthier, take nice daily walks, and mention this score to your family doctor the next time you visit them.")
+                else:
+                    st.markdown(f'<div class="risk-high">🚨 Time to Take Care &nbsp;·&nbsp; {pct:.1f}%</div>', unsafe_allow_html=True)
+                    st.error(f"🔴 **Please Read: Time for a Little Extra Care**\n\nYour heart score is quite high today. This just means your body is asking for some extra attention. Please share these results with a loving family member or friend, and make a plan to visit a doctor soon so they can give you the best advice on staying strong.")
+
+                # Risk Factor Anomaly Audit Checks
+                st.markdown("**Vitals Anomalies Audit:**")
+                flags = []
+                if sys_bp >= 130 or dia_bp >= 80: flags.append("🔴 Elevated Blood Pressure Profile (Hypertension Framework)")
+                if tot_chol >= 200:               flags.append("🔴 Serum Lipids Outside Optimal Boundary")
+                if glucose >= 100:                flags.append("🔴 Fasting Glucose Boundary Deviation")
+                if cigs_per_day > 0:              flags.append("🔴 Active Inhaled Nicotine Usage")
+                if bmi >= 30:                     flags.append("🟡 High Body Mass Index Indexing")
+                elif bmi > 25:                    flags.append("🟡 Overweight BMI Baseline")
+                if heart_rate > 100:              flags.append("🟡 Tachycardic Resting Pulse Signature")
+                
+                if not flags:
+                    flags = ["🟢 Profile clean of major outlier risk indicators."]
+                for f in flags:
+                    st.markdown(f"- {f}")
+
+            # Inline Input Summary Panel
+            st.markdown("---")
+            st.markdown("### 📄 Active Parameters Matrix Log")
+            summary = pd.DataFrame({
+                "Parameter Field": ["Subject Age", "Biological Sex", "Active Smoker Indicator", "Cigarette Daily Intake", "Serum Total Cholesterol",
+                                  "Systolic Pressure Bound", "Diastolic Pressure Bound", "Body Mass Index", "Resting Beats/Min", "Fasting Plasma Glucose"],
+                "Registered Value": [age, sex_label, "Yes" if current_smoker else "No",
+                                       cigs_per_day, f"{tot_chol} mg/dL", f"{sys_bp} mmHg",
+                                       f"{dia_bp} mmHg", f"{bmi:.1f}", f"{heart_rate} bpm",
+                                       f"{glucose} mg/dL"],
+            })
+            st.dataframe(summary, use_container_width=True, hide_index=True)
+        else:
+            st.info("💡 Adjust the metric controllers above and trigger **Run Predictive Diagnostics** to generate the probability matrices.")
+            st.markdown("""
+            ### Engine Core Foundations
+            PulseMetrix maps user records directly against a **regularized Logistic Regression pipeline** optimized on the historic Framingham Heart Study tracking matrix (3,751 distinct subjects).
+            """)
+
+    # TAB 2: Health Metrics Geometric Alignment Comparison
     with tab2:
-        st.subheader("📈 Your Health Metrics vs Normal Ranges")
-
+        st.subheader("📈 Quantitative Metric Trajectory Comparison")
         col1, col2 = st.columns(2)
 
         with col1:
-            # Bar chart: vitals vs normals
             metrics = {
                 "Cholesterol (mg/dL)": (tot_chol, 200),
                 "Systolic BP (mmHg)":  (sys_bp,   120),
@@ -408,12 +403,10 @@ def main():
             colors = ["#ff4757" if y > n else "#2ed573" for y, n in zip(yours, normal)]
 
             fig_bar = go.Figure()
-            fig_bar.add_trace(go.Bar(name="Normal Range", x=names, y=normal,
-                                     marker_color="#a8d8ea", opacity=0.6))
-            fig_bar.add_trace(go.Bar(name="Your Value", x=names, y=yours,
-                                     marker_color=colors, opacity=0.9))
+            fig_bar.add_trace(go.Bar(name="Optimal Bound", x=names, y=normal, marker_color="#cbd5e1", opacity=0.5))
+            fig_bar.add_trace(go.Bar(name="Current Vector", x=names, y=yours, marker_color=colors, opacity=0.9))
             fig_bar.update_layout(
-                barmode="group", title="Your Values vs Normal Thresholds",
+                barmode="group", title="Metric Vectors vs Population Baselines",
                 height=380, margin=dict(t=40, b=60),
                 legend=dict(orientation="h", y=-0.25)
             )
@@ -422,56 +415,46 @@ def main():
         with col2:
             st.plotly_chart(make_radar(user_inputs), use_container_width=True)
 
-        # Normal ranges reference
-        st.markdown("### 📚 Reference Ranges")
+        # Baseline Threshold Reference Matrices
+        st.markdown("### 📚 Reference Guideline Frameworks")
         ref_data = pd.DataFrame([
-            {"Metric": "Total Cholesterol", "Optimal": "< 200 mg/dL", "Borderline": "200–239 mg/dL", "High Risk": "≥ 240 mg/dL"},
-            {"Metric": "Systolic BP",       "Optimal": "< 120 mmHg",  "Borderline": "120–139 mmHg",  "High Risk": "≥ 140 mmHg"},
-            {"Metric": "Diastolic BP",      "Optimal": "< 80 mmHg",   "Borderline": "80–89 mmHg",    "High Risk": "≥ 90 mmHg"},
-            {"Metric": "Fasting Glucose",   "Optimal": "< 100 mg/dL", "Borderline": "100–125 mg/dL", "High Risk": "≥ 126 mg/dL"},
-            {"Metric": "BMI",               "Optimal": "18.5–24.9",   "Borderline": "25–29.9",        "High Risk": "≥ 30"},
-            {"Metric": "Resting Heart Rate","Optimal": "60–75 bpm",   "Borderline": "76–99 bpm",      "High Risk": "≥ 100 bpm"},
+            {"Metric Feature": "Total Cholesterol", "Optimal Target": "< 200 mg/dL", "Borderline Zone": "200–239 mg/dL", "High Risk Boundary": "≥ 240 mg/dL"},
+            {"Metric Feature": "Systolic Pressure", "Optimal Target": "< 120 mmHg",  "Borderline Zone": "120–139 mmHg",  "High Risk Boundary": "≥ 140 mmHg"},
+            {"Metric Feature": "Diastolic Pressure", "Optimal Target": "< 80 mmHg",   "Borderline Zone": "80–89 mmHg",    "High Risk Boundary": "≥ 90 mmHg"},
+            {"Metric Feature": "Fasting Blood Sugar", "Optimal Target": "< 100 mg/dL", "Borderline Zone": "100–125 mg/dL", "High Risk Boundary": "≥ 126 mg/dL"},
+            {"Metric Feature": "Body Mass Index", "Optimal Target": "18.5–24.9",   "Borderline Zone": "25–29.9",        "High Risk Boundary": "≥ 30"},
+            {"Metric Feature": "Resting Heart Rate", "Optimal Target": "60–75 bpm",   "Borderline Zone": "76–99 bpm",      "High Risk Boundary": "≥ 100 bpm"},
         ])
         st.dataframe(ref_data, use_container_width=True, hide_index=True)
 
-    # ── TAB 3: Recommendations ────────────────────────────────────────────────
+    # TAB 3: Rule-Based Recommendations Framework Engine
     with tab3:
-        st.subheader("💡 Personalised Recommendations")
+        st.subheader("💡 Expert Intervention Guidelines")
         prob_for_recs = st.session_state.get("last_prob", 0.0)
-        recs = generate_recommendations(user_inputs, prob_for_recs)
+        recs = generate_recommendations(user_inputs, prob_for_recs, clinical_threshold)
         for rec in recs:
             st.markdown(f'<div class="info-card">{rec}</div>', unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("### 🏥 When to See a Doctor")
+        st.markdown("### 🏥 Structural Clinical Escalation Thresholds")
         st.markdown("""
-        Seek **immediate medical attention** if you experience:
-        - Chest pain or pressure
-        - Shortness of breath at rest
-        - Pain radiating to the arm, jaw, or back
-        - Sudden dizziness or cold sweats
-        
-        **Schedule a routine appointment** if your risk score is above 20% or you have 
-        multiple risk factors flagged above.
+        Seek **emergency evaluation channels immediately** if you observe the following symptoms:
+        - Acute thoracic chest discomfort, squeeze, or pressure grids.
+        - Unprovoked breathing difficulties or shortness of breath at rest.
+        - Radiation of localized pain sequences toward upper arms, jaw line, or left shoulder.
+        - Acute unexplained vertigo or sudden cold sweats.
         """)
 
         st.markdown("---")
-        st.markdown("### ℹ️ About the Risk Factors")
+        st.markdown("### ℹ️ Dynamic Structural Background Contexts")
         for factor, info in RISK_FACTORS_INFO.items():
-            clean_name = (factor.replace("cigsPerDay", "Smoking")
-                                .replace("totChol", "Cholesterol")
-                                .replace("sysBP", "Systolic BP")
-                                .replace("diaBP", "Diastolic BP")
-                                .replace("heartRate", "Heart Rate"))
-            with st.expander(clean_name):
+            with st.expander(factor):
                 st.write(info)
 
-    # Disclaimer
+    # Standard Regulatory Disclaimer
     st.markdown("""
     <div class="disclaimer-box">
-        ⚠️ <strong>Medical Disclaimer:</strong> Cardio Guard is an educational tool based on statistical 
-        modelling. It does <em>not</em> replace professional medical advice, diagnosis, or treatment. 
-        Always consult a qualified healthcare provider regarding any medical condition.
+        ⚠️ <strong>Medical Data Disclaimer:</strong> PulseMetrix serves purely as an automated analytical and portfolio demonstration system. Calculations reflect mathematical models based on statistical population aggregations and cannot be used as an substitute for direct professional physician consultation, medical screening, or customized medical diagnosis.
     </div>
     """, unsafe_allow_html=True)
 
